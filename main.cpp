@@ -1,409 +1,361 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-#include <HTTPClient.h>
-#include <AsyncTCP.h>
 #include <FS.h>
 #include "SPIFFS.h"
 #include "header.h"
 #include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <AsyncTCP.h>
+#include <Wire.h>
+#include <U8g2lib.h>
 
-#define SUN	0
-#define SUN_CLOUD  1
-#define CLOUD 2
-#define RAIN 3
-#define THUNDER 4
-
-
-const char panel_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-
-<head>
-  <title>AR Control Panel</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-  <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.14.7/dist/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
-  <style>
-
-
-    /* Grid Layout*/
-    .content {
-        width: 50vh;
-        margin: auto;
-        justify-content: space-evenly;
-        grid-template-columns: auto auto auto;
-
-    }
-
-    @media screen and (max-width: 650px) {
-        .content{
-            width: 90vh;
-        }
-    }
-
-    .add-widgets{
-        border: 1px solid rgb(211, 211, 211); 
-        border-radius: 15px;
-        padding: 25px;
-    }
-    .current-widgets{
-        border: 1px solid rgb(211, 211, 211); 
-        border-radius: 15px;
-        padding: 25px;
-    }
-
-    .widget-list {
-        overflow: scroll;
-
-    }
-    
-    /* Invidual elements */
-    form {
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-    }
-    body {background-color: transparent;}
-    button {
-        word-wrap: break-word;
-        max-width: 100%;
-    }
-    h1   {
-        color: rgb(73, 73, 73);
-        font-size: 25;
-        font-weight: 300;
-        text-align: center;
-        padding: 20px;
-        height: 10vh;
-    }
-    h2   {
-        color: rgb(73, 73, 73);
-        font-weight: 300;
-        text-align: center;
-        padding: 20px;
-        font-size: 25px;
-        border-top: 1px solid rgb(211, 211, 211); 
-    }
-
-     
-  </style>
-</head>
-
-<body>
-    <h1>Control Panel</h1>
-    <div class="content">
-        <div class="add-widgets">
-            <div class="row">
-                <div class="col text-center p-4">
-                    <a href="/cycle"><button type="button" class="btn btn-primary rounded-lg">Show Next</button></a>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col text-center p-4">
-                    <label>Set interval to change widgets</label>
-                    <div class="dropdown">
-                        <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            No interval
-                        </button>
-                        <div class="dropdown-menu w-100" aria-labelledby="dropdownMenuButton">
-                            <a class="dropdown-item" href="#">10s</a>
-                            <a class="dropdown-item" href="#">20s</a>
-                            <a class="dropdown-item" href="#">30s</a>
-                            <a class="dropdown-item" href="#">60s</a>
-                            <a class="dropdown-item" href="#">300s</a>
-                        </div>
-                </div>
-            </div>
-            </div>
-            <div class="row">
-                <div class="col text-center p-4">
-                    <h2>Widgets</h2>
-
-                    <label>Clock Widget</label>
-                    <div class="dropdown">
-                        <button class="btn btn-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            Timezone (UTC)
-                        </button>
-                        <div class="dropdown-menu w-100" aria-labelledby="dropdownMenuButton">
-                            <a class="dropdown-item" href="#">-3</a>
-                            <a class="dropdown-item" href="#">-2</a>
-                            <a class="dropdown-item" href="#">-1</a>
-                            <a class="dropdown-item" href="#">0</a>
-                            <a class="dropdown-item" href="#">+1</a>
-                            <a class="dropdown-item" href="#">+1</a>
-                            <a class="dropdown-item" href="#">+2</a>
-                            <a class="dropdown-item" href="#">+3</a>
-                            <a class="dropdown-item" href="#">+4</a>
-                            <a class="dropdown-item" href="#">+5</a>
-                            <a class="dropdown-item" href="#">+6</a>
-                            <a class="dropdown-item" href="#">+7</a>
-                            <a class="dropdown-item" href="#">+8</a>
-                        </div>
-                        <button type="button" class="btn btn-success">&#65291</button>
-                    </div>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col text-center p-4">
-                    <label>Weather Widget</label>
-                    <form action="/get", "/add?moi=hei">
-                        <div class="input-group">
-                        <input class="form-control rounded"placeholder="City" name="inputString">
-                        <button type="button" class="btn btn-success">&#65291</button>
-                        </div>
-                    </form>
-                    <p class="text-danger">%invalidCity%</p>
-                    %Invalid City Name%
-               
-                </div>
-            </div>
-            <div class="row">
-                <div class="col text-center p-4">
-                    <label>Text Widget</label>
-                        <form action="/add", "/add?moi=hei">
-                            <div class="input-group">
-                            <input class="form-control rounded"placeholder="Your text" name="inputString">
-                            <button type="button" class="btn btn-success">&#65291</button>
-                            </div>
-                        </form>           
-                </div>
-            </div>
-            <div class="row">
-                <div class="col text-center p-4">
-                    <label>Stock Widget</label>
-                        <form action="/add">
-                            <div class="input-group">
-                            <input class="form-control rounded"placeholder="Ticker" name="inputString">
-                            <button type="button" class="btn btn-success">&#65291</button>
-                            </div>
-                        </form>    
-                        <p class="text-danger">%invalidTicker%</p>       
-                </div>
-            </div>
-           
-        </div>
-    </div>
-</body>
-
-</html>)rawliteral";
-
+int currentWidget = 0;
+int interval = 0;
+int lastChange = 0;
 
 AsyncWebServer server(80);
 
-int currentWidget = 0;
-char *widgets[] = {};
+U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, SCL, SDA, U8X8_PIN_NONE);
+
+String weather_base_url = "https://api.openweathermap.org/data/2.5/weather?appid=80a0b6e9e8019ea97ceb2137ba302c7b&units=metric&q=";
+String stock_base_url = "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&apikey=56VD1DVXPXNQ8MB5&interval=5min&symbol=";
+String time_base_url = "https://timeapi.io/api/Time/current/zone?timeZone=";
 
 
-const char* host = "https://arlasit-api.onrender.com/date?timeZone=Europe/Helsinki"; 
-const char* host2 = "https://arlasit-api.onrender.com/weather?city=Espoo"; 
+String choosePlaceholderValues(const char* widgetName, const char* element) {
+  String filePath = "/";
+  filePath += widgetName;
+  filePath += ".txt";
 
-const char* PARAM_INPUT_1 = "input1";
-const char* PARAM_INPUT_2 = "input2"; 
-const char* PARAM_INPUT_3 = "input3";
+  Serial.println(SPIFFS.exists(filePath));
+  if(SPIFFS.exists(filePath)){
+    if(String(element) == "button"){
+      return String("-");
+    }
+    else{
+      return String("/remove");
+    }
+    
+  }
+  else{
+    if(String(element) == "button"){
+      return String("+");
+    }
+    else{
+      return String("/add");
+    }
+  }
+}
 
-const char* PARAM_STRING = "inputString";
-const char* PARAM_INT = "inputInt";
-const char* PARAM_FLOAT = "inputFloat";
+// Replace placeholder values in html with stored values
+String processor(const String& var){
 
+  Serial.println("EXECUTING PROCESSOR FUNCTION");
+
+  if(var == "weatherFormType"){
+    return choosePlaceholderValues("weather", "form");
+  }
+  if(var == "textFormType"){
+    return choosePlaceholderValues("text", "form");
+  }
+  if(var == "weatherButtonType"){
+    return choosePlaceholderValues("weather", "button");
+  }
+  if(var == "textButtonType"){
+    return choosePlaceholderValues("text", "button");
+  }
+  if(var == "weatherInputPlaceholder"){
+    if(SPIFFS.exists("/weather.txt")){
+      return readFile(SPIFFS, "/weather.txt");
+    }
+    else{
+      return "City";
+    }
+  }
+  if(var == "textInputPlaceholder"){
+    if(SPIFFS.exists("/text.txt")){
+      return readFile(SPIFFS, "/text.txt");
+    }
+    else{
+      return "Your Text";
+    }
+  }
+  if(var == "IntervalButton"){
+    if(interval > 0){
+      return String(interval) + " seconds";
+    }
+    else{
+      return String("No Interval");
+    }
+  }
+
+  return String();  
+}
 
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
 
-String readFile(fs::FS &fs, const char * path){
-  Serial.printf("Reading file: %s\r\n", path);
-  File file = fs.open(path, "r");
-  if(!file || file.isDirectory()){
-    Serial.println("- empty file or failed to open file");
-    return String();
+void weatherWidget(const char* temp, const char* wind, const char* description){
+
+  int iconNumber = 69;
+
+  if(String(description) == "Drizzle" || String(description) == "Rain" || String(description) == "Thunder"){
+    iconNumber = 67;
   }
-  Serial.println("- read from file:");
-  String fileContent;
-  while(file.available()){
-    fileContent+=String((char)file.read());
+  if(String(description) == "Clouds" || String(description) == "broken clouds"){
+    iconNumber = 64;
   }
-  file.close();
-  Serial.println(fileContent);
-  return fileContent;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_open_iconic_weather_4x_t);
+  u8g2.drawGlyph(60, 0, iconNumber);	
+  u8g2.setFont(u8g2_font_crox1hb_tf);
+  u8g2.drawStr(50, 0, temp);
+  u8g2.drawStr(37, 0, wind);
+  u8g2.sendBuffer();
 }
 
-void writeFile(fs::FS &fs, const char * path, const char * message){
-  Serial.printf("Writing file: %s\r\n", path);
-  File file = fs.open(path, "w");
-  if(!file){
-    Serial.println("- failed to open file for writing");
-    return;   
-  }
-  if(file.print(message)){
-    Serial.println("- file written");
-  } else {
-    Serial.println("- write failed");
-  }
-  file.close();
+
+void clockWidget(const char* param1, const char* param2, const char* param3){
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_crox1h_tf);
+  u8g2.drawStr(82, 00, param1);
+  u8g2.setFont(u8g2_font_crox3hb_tf);
+  u8g2.drawStr(60, 00, param2);
+  u8g2.drawStr(40, 00, param3);
+  u8g2.sendBuffer();
 }
 
-// Replaces placeholder with stored values
-String processor(const String& var){
-  //Serial.println(var);
-  Serial.println("THIS IS PROCESSOR FUNCTION");
-  Serial.println(var);
-
-  if(var == "inputString"){
-    return readFile(SPIFFS, "/inputString.txt");
-  }
-  else if(var == "inputInt"){
-    return readFile(SPIFFS, "/inputInt.txt");
-  }
-  else if(var == "inputFloat"){
-    return readFile(SPIFFS, "/inputFloat.txt");
-  }
-  else if(var == "invalidCity"){
-    return "Invalid City Name";
-  }
-  else if(var == "invalidTicker"){
-    return "Invalid Stock Ticker";
-  }
-  return String();  
+void textWidget(const char* param1, const char* param2, const char* param3){
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_crox1hb_tf);
+  u8g2.drawStr(50, 0, param3);
+  u8g2.drawStr(65, 0, param2);
+  u8g2.drawStr(80, 0, param1);
+  u8g2.sendBuffer();
 }
+
 
 void setup() {
+
   Serial.begin(115200);
+  Wire.begin();
   SPIFFS.begin(true);
+  u8g2.begin();
+  u8g2.setFontDirection(1);
+  u8g2.setFlipMode(1);
 
-  //loadingWidget(); 
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_crox1h_tf);
+  u8g2.drawStr(73, 0, "Searching");
+  u8g2.drawStr(52, 0, "Wi-Fi");
+  u8g2.sendBuffer();
 
-  Serial.println("Scanning network...");  
-  Serial.println(findNetwork());
+  String address = findNetwork();
 
-  //showIP(String(findNetwork()).c_str());
+  // Show server ip address on screen
+  Serial.println(address.c_str());
+  textWidget("Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str());
+  delay(3000);
 
+
+  // Start server and handle routes
   server.begin();
 
-  
-
-  // Send web page with input fields to client
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", panel_html, processor);
-    //request->send(SPIFFS, "index.html", "text/html");
   });
 
   server.on("/cycle", HTTP_GET, [] (AsyncWebServerRequest *request) {
     currentWidget++;
-    if(currentWidget > 1){
+
+    int widgetCount = 1;
+
+    if(SPIFFS.exists("/weather.txt")){
+      widgetCount++;
+    }
+    if(SPIFFS.exists("/text.txt")){
+      widgetCount++;
+    }
+
+    if(currentWidget > (widgetCount - 1)){
       currentWidget = 0;
     }
     request->send_P(200, "text/html", panel_html, processor);
   });
 
-  server.on("/add", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    String inputMessage;
-    if (request->hasParam(PARAM_STRING)) {
-      inputMessage = request->getParam(PARAM_STRING)->value();
-      Serial.println(inputMessage.c_str());
-      Serial.println(request->params());
-      writeFile(SPIFFS, "/weather.txt", inputMessage.c_str());
-    }
-    else {
-      inputMessage = "No message sent";
-    }
+  server.on("/setInterval", HTTP_GET, [] (AsyncWebServerRequest *request) {
+
+    interval = request->getParam("seconds")->value().toInt();
     request->send_P(200, "text/html", panel_html, processor);
   });
 
-  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    String inputMessage;
-    // GET inputString value on <ESP_IP>/get?inputString=<inputMessage>
-    if (request->hasParam(PARAM_STRING)) {
-      inputMessage = request->getParam(PARAM_STRING)->value();
-      printf(inputMessage.c_str());
-      //writeFile(SPIFFS, "/inputString.txt", inputMessage.c_str());
-    }
-    else {
-      inputMessage = "No message sent";
-    }
-    Serial.println(inputMessage);
-    //request->send_P(200, "text/html", panel_html, processor);
-    request->send(200, "text/text", "Invalid city name");
-  });
-  server.onNotFound(notFound);
-  server.begin();
 
+  server.on("/add", HTTP_GET, [] (AsyncWebServerRequest *request) {
+
+    String inputString;
+
+    if (request->hasParam("weather")) {
+      inputString = request->getParam("weather")->value();
+
+      String weather_host = (weather_base_url + String(inputString));
+
+      if(makeRequest(weather_host.c_str(), "weather") != "null"){
+        writeFile(SPIFFS, "/weather.txt", inputString.c_str());
+      }
+
+    }
+    else if (request->hasParam("text")) {
+      inputString = request->getParam("text")->value();
+      writeFile(SPIFFS, "/text.txt", inputString.c_str());
+    }
+    
+    request->send_P(200, "text/html", panel_html, processor);
+  });
+
+  server.on("/remove", HTTP_GET, [] (AsyncWebServerRequest *request) {
+
+    if (request->hasParam("weather")) {
+      SPIFFS.remove("/weather.txt");
+    }
+    else if (request->hasParam("text")) {
+      SPIFFS.remove("/text.txt");
+    }
+    
+    request->send_P(200, "text/html", panel_html, processor);
+  });
 
 }
 
-
 void loop() {
-  // To access your stored values on inputString, inputInt, inputFloat
-  //String yourInputString = readFile(SPIFFS, "/inputString.txt");
-  //Serial.print("*** Your inputString: ");
-  //Serial.println(yourInputString);
 
-  HTTPClient http;
-  String serverPath = host;
+  // Check wifi connection and reconnect if necessary
+  if(!(WiFi.status() == WL_CONNECTED)){
+    textWidget("Connection", "Lost", "");
+    String address = findNetwork();
+    delay(1000);
+    textWidget("Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str());
+    delay(3000);
+  }
 
-  
+
+  String widgets[3] = {"clock"};
+  int widgetCount = 1;
+
+  if(SPIFFS.exists("/weather.txt")){
+    widgets[widgetCount] = "weather";
+    widgetCount++;
+  }
+  if(SPIFFS.exists("/text.txt")){
+    widgets[widgetCount] = "text";
+    widgetCount++;
+  }
+
+
+  // Make http request to api
+  if(widgets[currentWidget] == String("text")){
+
+    String customText = readFile(SPIFFS, "/text.txt");
+    int length = customText.length();
+    
+    // IMPLEMENT SWITCH STATEMENT HERE!!!!!!!
+    // Show the text on 3 lines
+    textWidget(
+    customText.substring(0, length / 3).c_str(), 
+    customText.substring(length / 3, (length / 3) * 2).c_str(), 
+    customText.substring((length / 3) * 2, (length / 3) * 3).c_str()
+    );
+  }
+
+  else{
+    HTTPClient http;
+
+  String serverPath;
   if(widgets[currentWidget] == "clock"){
-    serverPath = host;
-  }
-  else if(widgets[currentWidget] == "weather"){
-    serverPath = host2;
-  }
-
-  Serial.println(widgets[currentWidget]);
-  Serial.println(serverPath.c_str());
-  
-
-
-  http.begin(serverPath.c_str());
-  int httpResponseCode = http.GET();
-  
-  if (httpResponseCode>0) {
-    String payload = http.getString();
-
-    // PARSE JSON
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, payload);
-
-
-    if(currentWidget == 1){
-      int year = doc["year"];
-      int month = doc["month"];
-      int day = doc["day"];
-      int hour = doc["hour"];
-      int minute = doc["minute"];
-
-      char buffer[7];  
-      String date = String(String(day) + "/" + String(month) + "/" + String(year));
-      String clock = String(String(hour) + ":" + String(minute));
-
-      //clockWidget(date.c_str(), clock.c_str(), "");
-    }
-    else if(currentWidget == 2){
-      int temp = doc["temp"];
-      int wind = doc["wind"];
-      char buffer[7];  
-      String tempString = String(temp);
-      String tempString2 = String(tempString + "c");
-      String windString = String(wind);
-      String windString2 = String(windString + " m/s");
-
-      //weatherWidget(tempString2.c_str(), windString2.c_str(), doc["description"]);
-    }
+    serverPath = time_base_url + "Europe/Helsinki";
 
   }
   else{
-    Serial.println("HTTP ERROR CODE: ");
-    Serial.println(httpResponseCode);
-    Serial.println(WiFi.isConnected());
-    if(!(WiFi.status() == WL_CONNECTED)){
-      Serial.println("WIFI IS NOT CONNECTED!");
+    serverPath = weather_base_url + readFile(SPIFFS, "/weather.txt");
+  }
+
+  http.begin(serverPath.c_str());
+  int httpResponseCode = http.GET();
+
+  if (httpResponseCode>0) {
+    String payload = http.getString();
+
+    // Handle the json object from api
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error) {
+      // Handle deserialization errors
+      Serial.print("Deserialization failed: ");
+      Serial.println(error.c_str());
+      return;  
+    }
+
+
+    if(widgets[currentWidget] == "clock"){
+      int month = doc["month"];
+      int day = doc["day"];
+
+      String weekday = doc["dayOfWeek"];
+      String date = String(day) + "." + String(month);
+      String time = doc["time"];
+
+      if(time != "null"){
+        clockWidget(weekday.c_str(), time.c_str(), date.c_str());
+      }
+      
+    }
+    else if(widgets[currentWidget] == "weather"){
+
+      float temp = doc["main"]["temp"];
+      float wind = doc["wind"]["speed"];
+      
+      String desc = doc["weather"][0]["main"];
+      String tempString = String(lround(temp)) + "c";
+      String windString = String(lround(wind)) + " m/s";
+
+      
+      if(desc != "null"){
+        weatherWidget(tempString.c_str(), windString.c_str(), desc.c_str());
+      }
+      
     }
   }
+  }
+
+  
+
+  if(interval > 0){
+
+    lastChange++;
+
+    Serial.println(interval);
+    Serial.println("Last change: " + String(lastChange));
+
+    if(lastChange > interval){
+      lastChange = 0;
+
+      currentWidget++;
+
+      int widgetCount = 1;
+
+      if(SPIFFS.exists("/weather.txt")){
+        widgetCount++;
+      }
+      if(SPIFFS.exists("/text.txt")){
+        widgetCount++;
+      }
+
+      if(currentWidget > (widgetCount - 1)){
+        currentWidget = 0;
+      }
+    }
     
+  }
   delay(1000);
 }
-
-
-
-
-
