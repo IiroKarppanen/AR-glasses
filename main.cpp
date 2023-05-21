@@ -27,7 +27,6 @@ String choosePlaceholderValues(const char* widgetName, const char* element) {
   filePath += widgetName;
   filePath += ".txt";
 
-  Serial.println(SPIFFS.exists(filePath));
   if(SPIFFS.exists(filePath)){
     if(String(element) == "button"){
       return String("-");
@@ -49,8 +48,6 @@ String choosePlaceholderValues(const char* widgetName, const char* element) {
 
 // Replace placeholder values in html with stored values
 String processor(const String& var){
-
-  Serial.println("EXECUTING PROCESSOR FUNCTION");
 
   if(var == "weatherFormType"){
     return choosePlaceholderValues("weather", "form");
@@ -96,6 +93,15 @@ void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
 
+void textWidget(int y1, int y2, int y3, const char* param1, const char* param2, const char* param3, const uint8_t *font){
+  u8g2.clearBuffer();
+  u8g2.setFont(font);
+  u8g2.drawStr(y1, 0, param1);
+  u8g2.drawStr(y2, 0, param2);
+  u8g2.drawStr(y3, 0, param3);
+  u8g2.sendBuffer();
+}
+
 void weatherWidget(const char* temp, const char* wind, const char* description){
 
   int iconNumber = 69;
@@ -127,16 +133,6 @@ void clockWidget(const char* param1, const char* param2, const char* param3){
   u8g2.sendBuffer();
 }
 
-void textWidget(const char* param1, const char* param2, const char* param3){
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_crox1hb_tf);
-  u8g2.drawStr(50, 0, param3);
-  u8g2.drawStr(65, 0, param2);
-  u8g2.drawStr(80, 0, param1);
-  u8g2.sendBuffer();
-}
-
-
 void setup() {
 
   Serial.begin(115200);
@@ -146,19 +142,13 @@ void setup() {
   u8g2.setFontDirection(1);
   u8g2.setFlipMode(1);
 
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_crox1h_tf);
-  u8g2.drawStr(73, 0, "Searching");
-  u8g2.drawStr(52, 0, "Wi-Fi");
-  u8g2.sendBuffer();
+  textWidget(73, 52, 0, "Searching", "Wi-Fi", "", u8g2_font_crox1h_tf);
 
   String address = findNetwork();
 
   // Show server ip address on screen
-  Serial.println(address.c_str());
-  textWidget("Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str());
+  textWidget(80, 65, 50, "Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str(), u8g2_font_crox1hb_tf);
   delay(3000);
-
 
   // Start server and handle routes
   server.begin();
@@ -201,7 +191,7 @@ void setup() {
 
       String weather_host = (weather_base_url + String(inputString));
 
-      if(makeRequest(weather_host.c_str(), "weather") != "null"){
+      if(makeWeatherRequest(weather_host.c_str()) != "null"){
         writeFile(SPIFFS, "/weather.txt", inputString.c_str());
       }
 
@@ -232,10 +222,10 @@ void loop() {
 
   // Check wifi connection and reconnect if necessary
   if(!(WiFi.status() == WL_CONNECTED)){
-    textWidget("Connection", "Lost", "");
+    textWidget(80, 65, 50, "Connection", "Lost", "", u8g2_font_crox1hb_tf);
     String address = findNetwork();
     delay(1000);
-    textWidget("Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str());
+    textWidget(80, 65, 50, "Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str(), u8g2_font_crox1hb_tf);
     delay(3000);
   }
 
@@ -259,17 +249,31 @@ void loop() {
     String customText = readFile(SPIFFS, "/text.txt");
     int length = customText.length();
     
-    // IMPLEMENT SWITCH STATEMENT HERE!!!!!!!
-    // Show the text on 3 lines
-    textWidget(
-    customText.substring(0, length / 3).c_str(), 
-    customText.substring(length / 3, (length / 3) * 2).c_str(), 
-    customText.substring((length / 3) * 2, (length / 3) * 3).c_str()
-    );
+    // Divide text to different lines depending on it's lenght
+
+    switch (length)
+    {
+      case 0 ... 8: 
+        textWidget(65, 0, 0, customText.c_str(), "", "", u8g2_font_crox1h_tf);
+        break;
+      case 9 ... 16:
+        textWidget(80, 65, 50, 
+        customText.substring(0, length / 2).c_str(), 
+        customText.substring(length / 2, ((length / 2) * 2) + 1).c_str(), "", u8g2_font_crox1h_tf);
+        break;
+      case 17 ... 24:
+        textWidget(65, 0, 0, 
+        customText.substring(0, length / 3).c_str(),
+        customText.substring(length / 3, (length / 3) * 2).c_str(), 
+        customText.substring((length / 3) * 2, ((length / 3) * 3) + 1).c_str(), u8g2_font_crox1h_tf);
+        break;
+    }
+    
   }
 
   else{
-    HTTPClient http;
+  
+  HTTPClient http;
 
   String serverPath;
   if(widgets[currentWidget] == "clock"){
@@ -333,9 +337,6 @@ void loop() {
   if(interval > 0){
 
     lastChange++;
-
-    Serial.println(interval);
-    Serial.println("Last change: " + String(lastChange));
 
     if(lastChange > interval){
       lastChange = 0;

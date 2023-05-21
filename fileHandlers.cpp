@@ -1,7 +1,6 @@
 #include <FS.h>
 #include "SPIFFS.h"
 
-
 String readFile(fs::FS &fs, const char * path){
   Serial.printf("Reading file: %s\r\n", path);
   File file = fs.open(path, "r");
@@ -15,28 +14,9 @@ String readFile(fs::FS &fs, const char * path){
     fileContent+=String((char)file.read());
   }
   file.close();
-  Serial.println(fileContent);
   return fileContent;
 }
 
-int hasContent(fs::FS &fs, const char * path){
-  int returnType = 0;
-  if (SPIFFS.exists(path)) {
-    // Get the file size
-    File file = SPIFFS.open(path, FILE_READ);
-    if (file) {
-      size_t fileSize = file.size();
-      file.close();
-
-      // Check if the file has content
-      if (fileSize > 0) {
-        returnType = 1;
-      } 
-    } 
-  } 
-
-  return returnType;
-}
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
   Serial.printf("Writing file: %s\r\n", path);

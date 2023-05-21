@@ -29,11 +29,9 @@ String findNetwork(){
   
 }
 
-String makeRequest(const char* host, const char* widgetType){
+String makeWeatherRequest(const char* host){
   HTTPClient http;
   String serverPath = host;
-
-  char *params[] = {};
 
   http.begin(serverPath.c_str());
   int httpResponseCode = http.GET();
@@ -45,35 +43,9 @@ String makeRequest(const char* host, const char* widgetType){
     StaticJsonDocument<200> doc;
     DeserializationError error = deserializeJson(doc, payload);
 
-
-    if(widgetType == "clock"){
-      int month = doc["month"];
-      int day = doc["day"];
-      int hour = doc["hour"];
-      int minute = doc["minute"];
-
-      char buffer[7];  
-      String date = String(String(day) + "." + String(month));
-      String clock = String(String(hour) + ":" + String(minute));
-
-
-    }
-    else if(widgetType = "weather"){
-      int temp = doc["temp"];
-      int wind = doc["wind"];
-      char buffer[7];  
-      String tempString = String(temp);
-      String tempString2 = String(tempString + "c");
-      String windString = String(wind);
-      String windString2 = String(windString + " m/s");
-
-    }
-
     if(doc["message"] == "city not found"){
       return "null";
     }
-
-    return payload;
   }
-  return "";
+  return "OK";
 }

@@ -1,11 +1,10 @@
 // Files
 String readFile(fs::FS &fs, const char * path);
 void writeFile(fs::FS &fs, const char * path, const char * message);
-int hasContent(fs::FS &fs, const char * path);
 
 // Network
 String findNetwork();
-String makeRequest(const char* host, const char* widgetType);
+String makeWeatherRequest(const char* host);
 
 // Control panel webpage
 const char panel_html[] PROGMEM = R"=====(
