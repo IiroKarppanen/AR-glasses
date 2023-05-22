@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <AsyncTCP.h>
 
+
 String findNetwork(){
 
   WiFi.mode(WIFI_STA);
@@ -16,8 +17,9 @@ String findNetwork(){
     int n = WiFi.scanNetworks();
 
     for (int i = 0; i < n; ++i) {
-      if(WiFi.encryptionType(i) == WIFI_AUTH_OPEN && WiFi.SSID(i) != "Sony 75 Tv.v," && WiFi.SSID(i) != "HP-Print-FD-LaserJet Pro MFP"){
+      if(WiFi.encryptionType(i) == WIFI_AUTH_OPEN && WiFi.SSID(i) != "HP-Print-FD-LaserJet Pro MFP"){
         WiFi.begin(WiFi.SSID(i).c_str());
+        Serial.println(WiFi.SSID(i));
         delay(1000);
         break;
       }
@@ -25,27 +27,38 @@ String findNetwork(){
     delay(1000);
   }
 
+
   return WiFi.localIP().toString();
   
 }
 
-String makeWeatherRequest(const char* host){
-  HTTPClient http;
-  String serverPath = host;
+String makeRequest(const char* host){
 
-  http.begin(serverPath.c_str());
+  HTTPClient http;
+  
+  http.begin(host);
   int httpResponseCode = http.GET();
   
   if (httpResponseCode>0) {
     String payload = http.getString();
 
-    // PARSE JSON
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, payload);
+    http.end();
 
-    if(doc["message"] == "city not found"){
+    StaticJsonDocument<1024> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, payload);
+    if (error) {
+        Serial.print("Deserialization failed: ");
+        Serial.println(error.c_str());
+    }
+
+    if(responseDoc["message"] == "city not found"){
       return "null";
     }
+
+    return payload;
   }
-  return "OK";
+  else{
+    http.end();
+    return "null";
+  }
 }

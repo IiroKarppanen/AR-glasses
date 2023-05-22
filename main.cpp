@@ -8,43 +8,23 @@
 #include <AsyncTCP.h>
 #include <Wire.h>
 #include <U8g2lib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 int currentWidget = 0;
-int interval = 0;
-int lastChange = 0;
+float interval = 0;
+float lastChange = 0;
+
+char weatherValues[4][10];
+char clockValues[3][10];
 
 AsyncWebServer server(80);
 
 U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, SCL, SDA, U8X8_PIN_NONE);
 
-String weather_base_url = "https://api.openweathermap.org/data/2.5/weather?appid=80a0b6e9e8019ea97ceb2137ba302c7b&units=metric&q=";
-String stock_base_url = "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&apikey=56VD1DVXPXNQ8MB5&interval=5min&symbol=";
-String time_base_url = "https://timeapi.io/api/Time/current/zone?timeZone=";
-
-
-String choosePlaceholderValues(const char* widgetName, const char* element) {
-  String filePath = "/";
-  filePath += widgetName;
-  filePath += ".txt";
-
-  if(SPIFFS.exists(filePath)){
-    if(String(element) == "button"){
-      return String("-");
-    }
-    else{
-      return String("/remove");
-    }
-    
-  }
-  else{
-    if(String(element) == "button"){
-      return String("+");
-    }
-    else{
-      return String("/add");
-    }
-  }
-}
+const char* weather_base_url = "https://api.openweathermap.org/data/2.5/weather?appid=80a0b6e9e8019ea97ceb2137ba302c7b&units=metric&q=";
+const char* stock_base_url = "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&apikey=56VD1DVXPXNQ8MB5&interval=5min&symbol=";
+const char* time_url = "https://timeapi.io/api/Time/current/zone?timeZone=Europe/Helsinki";
 
 // Replace placeholder values in html with stored values
 String processor(const String& var){
@@ -133,8 +113,156 @@ void clockWidget(const char* param1, const char* param2, const char* param3){
   u8g2.sendBuffer();
 }
 
-void setup() {
 
+void widgetLoop(void* parameter){
+
+  while(true){
+
+    String widgets[3] = {"clock", "" , ""};
+    int widgetCount = 1;
+
+    if(SPIFFS.exists("/weather.txt")){
+      widgets[widgetCount] = "weather";
+      widgetCount++;
+    }
+    if(SPIFFS.exists("/text.txt")){
+      widgets[widgetCount] = "text";
+      widgetCount++;
+    }
+
+
+    if(widgets[currentWidget] == "text"){
+
+      String customText = readFile(SPIFFS, "/text.txt");
+      int length = customText.length();
+      
+      // Divide text to different lines depending on it's lenght
+      switch (length)
+      {
+        case 0 ... 8: 
+          textWidget(65, 0, 0, customText.c_str(), "", "", u8g2_font_crox1h_tf);
+          break;
+        case 9 ... 16:
+          textWidget(80, 65, 50, 
+          customText.substring(0, length / 2).c_str(), 
+          customText.substring(length / 2, ((length / 2) * 2) + 1).c_str(), "", u8g2_font_crox1h_tf);
+          break;
+        case 17 ... 24:
+          textWidget(65, 0, 0, 
+          customText.substring(0, length / 3).c_str(),
+          customText.substring(length / 3, (length / 3) * 2).c_str(), 
+          customText.substring((length / 3) * 2, ((length / 3) * 3) + 1).c_str(), u8g2_font_crox1h_tf);
+          break;
+      }
+      
+    }
+
+    if(widgets[currentWidget] == "clock" && !(strcmp(clockValues[1], "") == 0)){
+        clockWidget(clockValues[0], clockValues[1], clockValues[2]);
+    }
+    if(widgets[currentWidget] == "weather" && !(strcmp(weatherValues[1], "") == 0)){
+        weatherWidget(weatherValues[2], weatherValues[3], weatherValues[1]);
+    }
+
+
+  // Change widget automatically if interval is set by user
+  lastChange++;
+  if(lastChange >= interval && interval != 0){
+    lastChange = 0;
+    currentWidget++;
+    if(currentWidget == widgetCount){
+      currentWidget = 0;
+    }
+  }
+
+  vTaskDelay(pdMS_TO_TICKS(1000)); 
+  }
+}
+
+void requestLoop(void* parameter){
+
+  while(true){
+    
+    // Check wifi connection and reconnect if necessary 
+    if(!(WiFi.status() == WL_CONNECTED)){
+      textWidget(80, 65, 50, "Connection", "Lost", "", u8g2_font_crox1hb_tf);
+      String address = findNetwork();
+      textWidget(80, 65, 50, "Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str(), u8g2_font_crox1hb_tf);
+      delay(2000);
+    }
+
+    // GET TIME DATA
+    String payload = makeRequest(time_url);
+
+    if(payload != "null"){
+      StaticJsonDocument<1024> responseDoc;
+      DeserializationError error = deserializeJson(responseDoc, payload.c_str());
+      if (error) {
+        Serial.print("Deserialization failed: ");
+        Serial.println(error.c_str());
+        return;  
+      }
+      int month = responseDoc["month"];
+      int day = responseDoc["day"];
+
+      char date[10]; 
+      snprintf(date, sizeof(date), "%d.%d", day, month);
+
+      char weekday[10];
+      const char* dayOfWeek = responseDoc["dayOfWeek"].as<const char*>();
+      snprintf(weekday, sizeof(weekday), "%s", dayOfWeek);
+
+      strcpy(clockValues[0], responseDoc["dayOfWeek"]);
+      strcpy(clockValues[1], responseDoc["time"]);
+      strcpy(clockValues[2], date);
+    }
+    
+
+    // GET WEATHER DATA
+    if(SPIFFS.exists("/weather.txt")){
+
+    strcpy(weatherValues[0], readFile(SPIFFS, "/weather.txt").c_str());
+
+    char weather_url[200];  
+    strcpy(weather_url, weather_base_url);
+    strcat(weather_url, weatherValues[0]);
+
+    String payload = makeRequest(weather_url);
+
+    if(payload != "null"){
+        StaticJsonDocument<1024> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, payload.c_str());
+        if (error) {
+          Serial.print("deserializeJson() failed: ");
+          Serial.println(error.c_str());
+          return;
+        }
+
+        float temp = responseDoc["main"]["temp"];
+        float wind = responseDoc["wind"]["speed"];
+        
+        // Description
+        strcpy(weatherValues[1], responseDoc["weather"][0]["main"]);
+
+        // Temp
+        char tempString[10]; 
+        snprintf(tempString, sizeof(tempString), "%dc", lround(temp));
+        strcpy(weatherValues[2], tempString);
+
+        // Wind
+        char windString[10]; 
+        snprintf(windString, sizeof(windString), "%dm/s", lround(wind));
+        strcpy(weatherValues[3], windString);
+      
+    }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(5000)); 
+  }
+}
+
+
+void setup() {
   Serial.begin(115200);
   Wire.begin();
   SPIFFS.begin(true);
@@ -148,7 +276,6 @@ void setup() {
 
   // Show server ip address on screen
   textWidget(80, 65, 50, "Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str(), u8g2_font_crox1hb_tf);
-  delay(3000);
 
   // Start server and handle routes
   server.begin();
@@ -190,8 +317,7 @@ void setup() {
       inputString = request->getParam("weather")->value();
 
       String weather_host = (weather_base_url + String(inputString));
-
-      if(makeWeatherRequest(weather_host.c_str()) != "null"){
+      if(makeRequest(weather_host.c_str()) != "null"){
         writeFile(SPIFFS, "/weather.txt", inputString.c_str());
       }
 
@@ -216,147 +342,11 @@ void setup() {
     request->send_P(200, "text/html", panel_html, processor);
   });
 
+  xTaskCreate(requestLoop, "RequestLoop", 20000, NULL, 1, NULL);
+  xTaskCreate(widgetLoop, "WidgetLoop", 20000, NULL, 1, NULL);
+
 }
 
 void loop() {
-
-  // Check wifi connection and reconnect if necessary
-  if(!(WiFi.status() == WL_CONNECTED)){
-    textWidget(80, 65, 50, "Connection", "Lost", "", u8g2_font_crox1hb_tf);
-    String address = findNetwork();
-    delay(1000);
-    textWidget(80, 65, 50, "Server", address.substring(0, 7).c_str(), address.substring(7, address.length()).c_str(), u8g2_font_crox1hb_tf);
-    delay(3000);
-  }
-
-
-  String widgets[3] = {"clock"};
-  int widgetCount = 1;
-
-  if(SPIFFS.exists("/weather.txt")){
-    widgets[widgetCount] = "weather";
-    widgetCount++;
-  }
-  if(SPIFFS.exists("/text.txt")){
-    widgets[widgetCount] = "text";
-    widgetCount++;
-  }
-
-
-  // Make http request to api
-  if(widgets[currentWidget] == String("text")){
-
-    String customText = readFile(SPIFFS, "/text.txt");
-    int length = customText.length();
-    
-    // Divide text to different lines depending on it's lenght
-
-    switch (length)
-    {
-      case 0 ... 8: 
-        textWidget(65, 0, 0, customText.c_str(), "", "", u8g2_font_crox1h_tf);
-        break;
-      case 9 ... 16:
-        textWidget(80, 65, 50, 
-        customText.substring(0, length / 2).c_str(), 
-        customText.substring(length / 2, ((length / 2) * 2) + 1).c_str(), "", u8g2_font_crox1h_tf);
-        break;
-      case 17 ... 24:
-        textWidget(65, 0, 0, 
-        customText.substring(0, length / 3).c_str(),
-        customText.substring(length / 3, (length / 3) * 2).c_str(), 
-        customText.substring((length / 3) * 2, ((length / 3) * 3) + 1).c_str(), u8g2_font_crox1h_tf);
-        break;
-    }
-    
-  }
-
-  else{
-  
-  HTTPClient http;
-
-  String serverPath;
-  if(widgets[currentWidget] == "clock"){
-    serverPath = time_base_url + "Europe/Helsinki";
-
-  }
-  else{
-    serverPath = weather_base_url + readFile(SPIFFS, "/weather.txt");
-  }
-
-  http.begin(serverPath.c_str());
-  int httpResponseCode = http.GET();
-
-  if (httpResponseCode>0) {
-    String payload = http.getString();
-
-    // Handle the json object from api
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error) {
-      // Handle deserialization errors
-      Serial.print("Deserialization failed: ");
-      Serial.println(error.c_str());
-      return;  
-    }
-
-
-    if(widgets[currentWidget] == "clock"){
-      int month = doc["month"];
-      int day = doc["day"];
-
-      String weekday = doc["dayOfWeek"];
-      String date = String(day) + "." + String(month);
-      String time = doc["time"];
-
-      if(time != "null"){
-        clockWidget(weekday.c_str(), time.c_str(), date.c_str());
-      }
-      
-    }
-    else if(widgets[currentWidget] == "weather"){
-
-      float temp = doc["main"]["temp"];
-      float wind = doc["wind"]["speed"];
-      
-      String desc = doc["weather"][0]["main"];
-      String tempString = String(lround(temp)) + "c";
-      String windString = String(lround(wind)) + " m/s";
-
-      
-      if(desc != "null"){
-        weatherWidget(tempString.c_str(), windString.c_str(), desc.c_str());
-      }
-      
-    }
-  }
-  }
-
-  
-
-  if(interval > 0){
-
-    lastChange++;
-
-    if(lastChange > interval){
-      lastChange = 0;
-
-      currentWidget++;
-
-      int widgetCount = 1;
-
-      if(SPIFFS.exists("/weather.txt")){
-        widgetCount++;
-      }
-      if(SPIFFS.exists("/text.txt")){
-        widgetCount++;
-      }
-
-      if(currentWidget > (widgetCount - 1)){
-        currentWidget = 0;
-      }
-    }
-    
-  }
-  delay(1000);
+  // Empty because freeRTOS is used
 }
