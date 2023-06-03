@@ -6,4 +6,4 @@ Self made AR glasses for Aalto Electrical workshop course. Powered by ESP32, tha
 ![clockWidget2](https://github.com/IiroKarppanen/ARlasit/assets/39335935/3efeefa5-ecbd-485d-bc1b-feb0276b4eed)
 ![weatherWidget2](https://github.com/IiroKarppanen/ARlasit/assets/39335935/a239cb8e-c7ff-4495-8082-ccf4deb39def)
 
-<img alt="hallintapaneeli" src="https://github.com/IiroKarppanen/AR-glasses/assets/39335935/e0c5486e-6dbf-4997-a68b-ca345820a55d">
+<img width="501" alt="hallintapaneeli" src="https://github.com/IiroKarppanen/AR-glasses/assets/39335935/6dc8bb9b-1b00-4183-bde7-91ddfe052989">
